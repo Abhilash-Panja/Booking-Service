@@ -58,7 +58,7 @@ public class BookingServiceImpl implements BookingService{
 
                 .bookingStatus(BookingStatus.ASSIGNING_DRIVER)
                 .startLocation(bookingDetails.getStartLocation())
-//                .endLocation(bookingDetails.getEndLocation())
+                .endLocation(bookingDetails.getEndLocation())
                 .passenger(passenger.get())
                 .build();
         Booking newBooking = bookingRepository.save(booking);
@@ -99,8 +99,13 @@ public class BookingServiceImpl implements BookingService{
         return UpdateBookingResponseDto.builder()
                 .bookingId(bookingId)
                 .status(booking.get().getBookingStatus())
-                .driver(Optional.ofNullable(booking.get().getDriver()))
-                .build();
+                .driver(
+                Optional.ofNullable(booking.get().getDriver())
+                        .map(assignedDriver -> DriverSummaryDto.builder()
+                                .id(assignedDriver.getId())
+                                .driverName(assignedDriver.getDriverName())
+                                .build())
+        ).build();
     }
 
     private void processNearbyDriversAsync(NearbyDriversRequestDto requestDto, Long passengerId, Long bookingId) {

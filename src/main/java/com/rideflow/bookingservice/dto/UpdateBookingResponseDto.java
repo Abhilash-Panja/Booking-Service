@@ -1,7 +1,8 @@
 package com.rideflow.bookingservice.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import com.rideflow.rideflowentityservice.models.BookingStatus;
-import com.rideflow.rideflowentityservice.models.Driver;
 import lombok.*;
 
 import java.util.Optional;
@@ -15,6 +16,7 @@ public class UpdateBookingResponseDto {
 
     private Long bookingId;
     private BookingStatus status;
-    private Optional<Driver> driver;
+    @Schema(description = "Raw shared Driver entity wrapped in Optional, not DriverResponseDTO. Nested relationships and sensitive properties may be exposed; serialization can fail on cycles or proxies. See separate issue report.")
+    private Optional<DriverSummaryDto> driver;
 
 }
