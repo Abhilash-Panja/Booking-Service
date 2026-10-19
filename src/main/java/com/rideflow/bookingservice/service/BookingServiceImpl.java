@@ -80,13 +80,11 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     public UpdateBookingResponseDto updateBooking(UpdateBookingRequestDto bookingRequestDto, Long bookingId) {
-        if (bookingRequestDto == null
-                || bookingRequestDto.getDriverId() == null
-                || bookingRequestDto.getDriverId().isEmpty()) {
+        if (bookingRequestDto == null || bookingRequestDto.getDriverId() == null) {
             throw new IllegalArgumentException("driverId is required");
         }
 
-        Long driverId = bookingRequestDto.getDriverId().get();
+        Long driverId = bookingRequestDto.getDriverId();
         Driver driver = driverRepository.findById(driverId)
                 .orElseThrow(() -> new IllegalArgumentException("Driver not found"));
 
@@ -105,7 +103,8 @@ public class BookingServiceImpl implements BookingService {
                         .map(assignedDriver -> DriverSummaryDto.builder()
                                 .id(assignedDriver.getId())
                                 .driverName(assignedDriver.getDriverName())
-                                .build()))
+                                .build())
+                        .orElse(null))
                 .build();
     }
 
