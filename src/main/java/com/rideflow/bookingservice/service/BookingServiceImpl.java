@@ -10,60 +10,60 @@ import com.rideflow.rideflowentityservice.models.Booking;
 import com.rideflow.rideflowentityservice.models.BookingStatus;
 import com.rideflow.rideflowentityservice.models.Driver;
 import com.rideflow.rideflowentityservice.models.Passenger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
 
-import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 
 @Service
-public class BookingServiceImpl implements BookingService{
+public class BookingServiceImpl implements BookingService {
+
+    private static final Logger log = LoggerFactory.getLogger(BookingServiceImpl.class);
 
     private final PassengerRepository passengerRepository;
     private final BookingRepository bookingRepository;
-
-    private final RestTemplate restTemplate;
-
     private final LocationServiceApi locationServiceApi;
-
     private final SocketApi socketApi;
     private final DriverRepository driverRepository;
 
-//    private static final String LOCATION_SERVICE = "http://localhost:7777";
-
-    public BookingServiceImpl(PassengerRepository passengerRepository,
-                              BookingRepository bookingRepository,
-                              LocationServiceApi locationServiceApi,
-                              SocketApi socketApi,
-                              DriverRepository driverRepository) {
+    public BookingServiceImpl(
+            PassengerRepository passengerRepository,
+            BookingRepository bookingRepository,
+            LocationServiceApi locationServiceApi,
+            SocketApi socketApi,
+            DriverRepository driverRepository) {
         this.passengerRepository = passengerRepository;
         this.bookingRepository = bookingRepository;
-        this.restTemplate = new RestTemplate();
         this.locationServiceApi = locationServiceApi;
         this.socketApi = socketApi;
         this.driverRepository = driverRepository;
     }
 
-
-
     @Override
     public CreateBookingResponseDto createBooking(CreateBookingDto bookingDetails) {
-        Optional<Passenger> passenger = passengerRepository.findById(bookingDetails.getPassengerId());
-        Booking booking = Booking.builder()
+        if (bookingDetails == null
+                || bookingDetails.getPassengerId() == null
+                || bookingDetails.getStartLocation() == null
+                || bookingDetails.getStartLocation().getLatitude() == null
+                || bookingDetails.getStartLocation().getLongitude() == null) {
+            throw new IllegalArgumentException("passengerId and startLocation coordinates are required");
+        }
 
+        Passenger passenger = passengerRepository.findById(bookingDetails.getPassengerId())
+                .orElseThrow(() -> new IllegalArgumentException("Passenger not found"));
+
+        Booking booking = Booking.builder()
                 .bookingStatus(BookingStatus.ASSIGNING_DRIVER)
                 .startLocation(bookingDetails.getStartLocation())
                 .endLocation(bookingDetails.getEndLocation())
-                .passenger(passenger.get())
+                .passenger(passenger)
                 .build();
         Booking newBooking = bookingRepository.save(booking);
-
-        // make an api call to location service to fetch nearby drivers
 
         NearbyDriversRequestDto request = NearbyDriversRequestDto.builder()
                 .latitude(bookingDetails.getStartLocation().getLatitude())
@@ -71,15 +71,6 @@ public class BookingServiceImpl implements BookingService{
                 .build();
 
         processNearbyDriversAsync(request, bookingDetails.getPassengerId(), newBooking.getId());
-//
-//        ResponseEntity<DriverLocationDto[]> result = restTemplate.postForEntity(LOCATION_SERVICE + "/api/location/nearby/drivers", request, DriverLocationDto[].class);
-//
-//        if(result.getStatusCode().is2xxSuccessful() && result.getBody() != null) {
-//            List<DriverLocationDto> driverLocations = Arrays.asList(result.getBody());
-//            driverLocations.forEach(driverLocationDto -> {
-//                System.out.println(driverLocationDto.getDriverId() + " " + "lat: " + driverLocationDto.getLatitude() + "long: " + driverLocationDto.getLongitude());
-//            });
-//        }
 
         return CreateBookingResponseDto.builder()
                 .bookingId(newBooking.getId())
@@ -89,83 +80,107 @@ public class BookingServiceImpl implements BookingService{
 
     @Override
     public UpdateBookingResponseDto updateBooking(UpdateBookingRequestDto bookingRequestDto, Long bookingId) {
-//        bookingRepository.fu
-        System.out.println(bookingRequestDto.getDriverId().get());
-        Optional<Driver> driver = driverRepository.findById(bookingRequestDto.getDriverId().get());
-        // TODO : if(driver.isPresent() && driver.get().isAvailable())
-        bookingRepository.updateBookingStatusAndDriverById(bookingId, BookingStatus.SCHEDULED,driver.get());
-        // TODO: driverRepository.update -> make it unavailable
-        Optional<Booking> booking = bookingRepository.findById(bookingId);
+        if (bookingRequestDto == null
+                || bookingRequestDto.getDriverId() == null
+                || bookingRequestDto.getDriverId().isEmpty()) {
+            throw new IllegalArgumentException("driverId is required");
+        }
+
+        Long driverId = bookingRequestDto.getDriverId().get();
+        Driver driver = driverRepository.findById(driverId)
+                .orElseThrow(() -> new IllegalArgumentException("Driver not found"));
+
+        bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new IllegalArgumentException("Booking not found"));
+
+        bookingRepository.updateBookingStatusAndDriverById(bookingId, BookingStatus.SCHEDULED, driver);
+
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new IllegalArgumentException("Booking not found after update"));
+
         return UpdateBookingResponseDto.builder()
                 .bookingId(bookingId)
-                .status(booking.get().getBookingStatus())
-                .driver(
-                Optional.ofNullable(booking.get().getDriver())
+                .status(booking.getBookingStatus())
+                .driver(java.util.Optional.ofNullable(booking.getDriver())
                         .map(assignedDriver -> DriverSummaryDto.builder()
                                 .id(assignedDriver.getId())
                                 .driverName(assignedDriver.getDriverName())
-                                .build())
-        ).build();
+                                .build()))
+                .build();
     }
 
-    private void processNearbyDriversAsync(NearbyDriversRequestDto requestDto, Long passengerId, Long bookingId) {
+    private void processNearbyDriversAsync(
+            NearbyDriversRequestDto requestDto,
+            Long passengerId,
+            Long bookingId) {
         Call<DriverLocationDto[]> call = locationServiceApi.getNearbyDrivers(requestDto);
-        System.out.println(call.request().url() + " " + call.request().method() + " " + call.request().headers());
 
-        call.enqueue(new Callback<DriverLocationDto[]>() {
+        call.enqueue(new Callback<>() {
             @Override
             public void onResponse(Call<DriverLocationDto[]> call, Response<DriverLocationDto[]> response) {
-//                try {
-//                    Thread.sleep(5000);
-//                } catch (InterruptedException e) {
-//                    throw new RuntimeException(e);
-//                }
-                if(response.isSuccessful() && response.body() != null) {
-                    List<DriverLocationDto> driverLocations = Arrays.asList(response.body());
-                    driverLocations.forEach(driverLocationDto -> {
-                        System.out.println(driverLocationDto.getDriverId() + " " + "lat: " + driverLocationDto.getLatitude() + "long: " + driverLocationDto.getLongitude());
-                    });
-
-                    try {
-                        raiseRideRequestAsync(RideRequestDto.builder().passengerId(passengerId).bookingId(bookingId).build());
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-
-                } else {
-                    System.out.println("Request failed" + response.message());
+                if (!response.isSuccessful() || response.body() == null) {
+                    log.warn("Location lookup failed for booking {}: {}", bookingId, response.message());
+                    cancelBooking(bookingId);
+                    return;
                 }
+
+                List<Long> driverIds = Arrays.stream(response.body())
+                        .map(DriverLocationDto::getDriverId)
+                        .map(BookingServiceImpl.this::parseDriverId)
+                        .filter(java.util.Objects::nonNull)
+                        .toList();
+
+                if (driverIds.isEmpty()) {
+                    log.info("No nearby drivers found for booking {}", bookingId);
+                    cancelBooking(bookingId);
+                    return;
+                }
+
+                RideRequestDto rideRequest = RideRequestDto.builder()
+                        .passengerId(passengerId)
+                        .bookingId(bookingId)
+                        .driverIds(driverIds)
+                        .build();
+                raiseRideRequestAsync(rideRequest);
             }
 
             @Override
-            public void onFailure(Call<DriverLocationDto[]> call, Throwable t) {
-                t.printStackTrace();
+            public void onFailure(Call<DriverLocationDto[]> call, Throwable throwable) {
+                log.warn("Location lookup failed for booking {}", bookingId, throwable);
+                cancelBooking(bookingId);
             }
         });
     }
 
-    private void raiseRideRequestAsync(RideRequestDto requestDto) throws IOException {
+    private void raiseRideRequestAsync(RideRequestDto requestDto) {
         Call<Boolean> call = socketApi.raiseRideRequest(requestDto);
-
-        System.out.println(call.request().url() + " " + call.request().method() + " " + call.request().headers());
         call.enqueue(new Callback<>() {
             @Override
             public void onResponse(Call<Boolean> call, Response<Boolean> response) {
-                System.out.println(response.isSuccessful());
-                System.out.println(response.message());
-                if (response.isSuccessful() && response.body() != null) {
-                    Boolean result = response.body();
-                    System.out.println("Driver response is" + result.toString());
-
-                } else {
-                    System.out.println("Request for ride failed" + response.message());
+                if (!response.isSuccessful() || !Boolean.TRUE.equals(response.body())) {
+                    log.warn("Socket request failed for booking {}: {}", requestDto.getBookingId(), response.message());
+                    cancelBooking(requestDto.getBookingId());
                 }
             }
 
             @Override
-            public void onFailure(Call<Boolean> call, Throwable t) {
-                t.printStackTrace();
+            public void onFailure(Call<Boolean> call, Throwable throwable) {
+                log.warn("Socket request failed for booking {}", requestDto.getBookingId(), throwable);
+                cancelBooking(requestDto.getBookingId());
             }
         });
+    }
+
+    private Long parseDriverId(String driverId) {
+        try {
+            return driverId == null ? null : Long.valueOf(driverId);
+        } catch (NumberFormatException ex) {
+            log.warn("Ignoring non-numeric driver id returned by Location-Service: {}", driverId);
+            return null;
+        }
+    }
+
+    private void cancelBooking(Long bookingId) {
+        bookingRepository.updateBookingStatusById(bookingId, BookingStatus.CANCELED);
     }
 }
