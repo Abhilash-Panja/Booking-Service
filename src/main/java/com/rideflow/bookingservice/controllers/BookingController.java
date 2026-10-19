@@ -17,6 +17,7 @@ import com.rideflow.bookingservice.service.BookingService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import jakarta.validation.Valid;
 
 import java.io.IOException;
 
@@ -45,7 +46,7 @@ public class BookingController {
                     content = @Content)
     })
     @PostMapping
-    public ResponseEntity<CreateBookingResponseDto> createBooking(@RequestBody CreateBookingDto createBookingDto) throws IOException {
+    public ResponseEntity<CreateBookingResponseDto> createBooking(@Valid @RequestBody CreateBookingDto createBookingDto) throws IOException {
 
         return new ResponseEntity<>(bookingService.createBooking(createBookingDto), HttpStatus.CREATED);
     }
@@ -66,7 +67,7 @@ public class BookingController {
                     content = @Content)
     })
     @PostMapping("/{bookingId}")
-    public ResponseEntity<UpdateBookingResponseDto> updateBooking(@RequestBody UpdateBookingRequestDto requestDto, @Parameter(description = "Database booking ID, not a review ID.", required = true, example = "1") @PathVariable Long bookingId) {
+    public ResponseEntity<UpdateBookingResponseDto> updateBooking(@Valid @RequestBody UpdateBookingRequestDto requestDto, @Parameter(description = "Database booking ID, not a review ID.", required = true, example = "1") @PathVariable Long bookingId) {
         return new ResponseEntity<>(bookingService.updateBooking(requestDto, bookingId), HttpStatus.OK);
     }
 

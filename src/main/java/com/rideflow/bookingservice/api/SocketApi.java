@@ -7,6 +7,6 @@ import retrofit2.http.POST;
 
 public interface SocketApi {
 
-    @POST("api/socket/newride")
+    @POST("/api/socket/newride")
     Call<Boolean> raiseRideRequest(@Body RideRequestDto requestDto);
 }
